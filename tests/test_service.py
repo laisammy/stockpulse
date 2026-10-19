@@ -124,3 +124,33 @@ def test_portfolio_view_after_merge_is_flat(pf):
 def test_portfolios_are_per_user(pf):
     pf.portfolio_add(1, "aapl", 10, 100.0)
     assert pf.portfolio_view(2) == "Your portfolio is empty."
+
+ALERT_PRICES = {"US.TSLA": (251.0, 245.0), "US.AAPL": (190.0, 186.0)}
+
+@pytest.fixture
+def al():
+    return StockPulse(FixedProvider(ALERT_PRICES), MemoryStore())
+
+def test_check_alerts_fires_and_removes(al):
+    al.alert_set(1, "tsla", "above", 250.0, 99)
+    al.alert_set(1, "aapl", "above", 200.0, 99)
+    al.provider.calls = 0
+    fired = al.check_alerts()
+    assert [a.code for a, _ in fired] == ["US.TSLA"]
+    assert al.provider.calls == 1
+    assert al.alert_list(1) == "#2 US.AAPL above 200.00"
+    assert al.check_alerts() == []
+
+def test_check_alerts_no_alerts_no_provider_call(al):
+    assert al.check_alerts() == []
+    assert al.provider.calls == 0
+
+def test_alert_remove(al):
+    al.alert_set(1, "tsla", "above", 250.0, 99)
+    assert al.alert_remove(1, 1) == "Removed alert #1."
+    assert al.alert_list(1) == "You have no alerts."
+
+def test_alert_remove_other_users_alert(al):
+    al.alert_set(1, "tsla", "above", 250.0, 99)
+    assert al.alert_remove(2, 1) == "Alert #1 not found."
+    assert al.alert_list(1) == "#1 US.TSLA above 250.00"

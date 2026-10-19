@@ -109,7 +109,7 @@ class StockPulse:
         code = tickers.normalize_ticker(raw_ticker)
         self.provider.snapshot([code])
         alert = self.store.add_alert(user_id, code, direction, target, channel_id)
-        return f"Alert #{alert.alert_id} set: {code} {direction} {target:2f}"
+        return f"Alert #{alert.alert_id} set: {code} {direction} {target:.2f}"
     
     def alert_list(self, user_id) -> str:
         _alerts = self.store.get_alerts(user_id)
@@ -125,6 +125,20 @@ class StockPulse:
         if _alerts == []:
             return []
         uniqueCodes = sorted({a.code for a in _alerts})
-        self.provider.snapshot(uniqueCodes)
-        
+        quotes = self.provider.snapshot(uniqueCodes)
+
+        results = []
+        for alert in alerts.triggered(_alerts, quotes):
+            self.store.remove_alert(alert.user_id, alert.alert_id)
+            price = quotes[alert.code].last_price
+            msg = (f"Alert #{alert.alert_id}: {alert.code} is now {price:.2f} "
+                f"({alert.direction} your target of {alert.target:.2f})")
+            results.append((alert, msg))
+        return results
+
+    def alert_remove(self, user_id, alert_id) -> str:
+        if self.store.remove_alert(user_id, alert_id):
+            return f"Removed alert #{alert_id}."
+        return f"Alert #{alert_id} not found."
+
         
