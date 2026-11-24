@@ -1,0 +1,6 @@
+discord.py
+python-dotenv
+boto3
+futu-api
+pytest
+moto
