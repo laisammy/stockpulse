@@ -1,0 +1,7 @@
+.venv
+.git
+.env
+*.pem
+guidelines.md
+tests
+__pycache__

@@ -46,6 +46,15 @@ cd src
 python bot.py
 ```
 
+Or with Docker, from the project root:
+
+```bash
+docker build -t stockpulse .
+docker run --env-file .env -e STORE=memory -e PROVIDER=mock stockpulse
+```
+
+On EC2, add `--network host` and set `STORE=dynamo` and `PROVIDER=futu`. Leave `TOKEN` unset so the bot reads it from SSM. FutuOpenD stays on the host.
+
 From the project root:
 
 ```bash
