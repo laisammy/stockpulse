@@ -1,16 +1,32 @@
 # slash commands, embeds, alert loop
+import asyncio
+
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 from discord.app_commands import Choice
 
-from config import TOKEN
+from config import AWS_REGION, PROVIDER, STORE, TABLE_NAME, TOKEN
 
 from market.mock_provider import MockProvider
 from service import StockPulse
 from storage.memory import MemoryStore
 
-pulse = StockPulse(MockProvider(), MemoryStore())
+if STORE == "dynamo":
+    import boto3
+    from storage.dynamo import DynamoStore
+    table = boto3.resource("dynamodb", region_name=AWS_REGION).Table(TABLE_NAME)
+    store = DynamoStore(table)
+else:
+    store = MemoryStore()
+
+if PROVIDER == "futu":
+    from market.futu_provider import FutuProvider
+    provider = FutuProvider()
+else:
+    provider = MockProvider()
+
+pulse = StockPulse(provider, store)
 
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -23,7 +39,9 @@ async def ping(interaction: discord.Interaction):
 @app_commands.describe(ticker="e.g. AAPL or 700")
 async def quote(interaction: discord.Interaction, ticker: str):
     try:
-        msg = pulse.quote(ticker)
+        msg = await asyncio.to_thread(pulse.quote, ticker)
+    except ConnectionError:
+        msg = "Market data is temporarily unavailable."
     except ValueError:
         msg = f"Unknown ticker: {ticker}"
     await interaction.response.send_message(msg)
@@ -34,7 +52,9 @@ watch = app_commands.Group(name="watch", description="Manage your watchlist")
 @app_commands.describe(ticker="e.g. AAPL or 700")
 async def watch_add(interaction: discord.Interaction, ticker: str):
     try:
-        msg = pulse.watch_add(interaction.user.id, ticker)
+        msg = await asyncio.to_thread(pulse.watch_add, interaction.user.id, ticker)
+    except ConnectionError:
+        msg = "Market data is temporarily unavailable."
     except ValueError:
         msg = f"Unknown ticker: {ticker}"
     await interaction.response.send_message(msg)
@@ -43,14 +63,19 @@ async def watch_add(interaction: discord.Interaction, ticker: str):
 @app_commands.describe(ticker="e.g. AAPL or 700")
 async def watch_remove(interaction: discord.Interaction, ticker: str):
     try:
-        msg = pulse.watch_remove(interaction.user.id, ticker)
+        msg = await asyncio.to_thread(pulse.watch_remove, interaction.user.id, ticker)
+    except ConnectionError:
+        msg = "Market data is temporarily unavailable."
     except ValueError:
         msg = f"Unknown ticker: {ticker}"
     await interaction.response.send_message(msg)
 
 @watch.command(name="list", description="Shows your watchlist")
 async def watch_list(interaction: discord.Interaction):
-    msg = pulse.watch_list(interaction.user.id)
+    try:
+        msg = await asyncio.to_thread(pulse.watch_list, interaction.user.id)
+    except ConnectionError:
+        msg = "Market data is temporarily unavailable."
     await interaction.response.send_message(msg)
 
 bot.tree.add_command(watch)
@@ -66,7 +91,9 @@ portfolio = app_commands.Group(name="portfolio", description="Track the stocks y
 )
 async def portfolio_add(interaction: discord.Interaction, ticker: str, quantity: int, price: float):
     try:
-        msg = pulse.portfolio_add(interaction.user.id, ticker, quantity, price)
+        msg = await asyncio.to_thread(pulse.portfolio_add, interaction.user.id, ticker, quantity, price)
+    except ConnectionError:
+        msg = "Market data is temporarily unavailable."
     except ValueError:
         msg = f"Unknown ticker: {ticker}"
     await interaction.response.send_message(msg)
@@ -76,7 +103,9 @@ async def portfolio_add(interaction: discord.Interaction, ticker: str, quantity:
 @app_commands.describe(ticker="e.g. AAPL or 700")
 async def portfolio_remove(interaction: discord.Interaction, ticker: str):
     try:
-        msg = pulse.portfolio_remove(interaction.user.id, ticker)
+        msg = await asyncio.to_thread(pulse.portfolio_remove, interaction.user.id, ticker)
+    except ConnectionError:
+        msg = "Market data is temporarily unavailable."
     except ValueError:
         msg = f"Unknown ticker: {ticker}"
     await interaction.response.send_message(msg)
@@ -84,7 +113,10 @@ async def portfolio_remove(interaction: discord.Interaction, ticker: str):
 
 @portfolio.command(name="view", description="Show your portfolio with gains and losses")
 async def portfolio_view(interaction: discord.Interaction):
-    msg = pulse.portfolio_view(interaction.user.id)
+    try:
+        msg = await asyncio.to_thread(pulse.portfolio_view, interaction.user.id)
+    except ConnectionError:
+        msg = "Market data is temporarily unavailable."
     await interaction.response.send_message(msg)
 
 bot.tree.add_command(portfolio)
@@ -102,20 +134,22 @@ alert = app_commands.Group(name="alert", description="Get notified when a stock 
 ])
 async def alert_set(interaction: discord.Interaction, ticker: str, direction: Choice[str], target: float):
     try:
-        msg = pulse.alert_set(interaction.user.id, ticker, direction.value, target, interaction.channel_id)
+        msg = await asyncio.to_thread(pulse.alert_set, interaction.user.id, ticker, direction.value, target, interaction.channel_id)
+    except ConnectionError:
+        msg = "Market data is temporarily unavailable."
     except ValueError:
         msg = f"Unknown ticker: {ticker}"
     await interaction.response.send_message(msg)\
 
 @alert.command(name="list", description="Show your alerts")
 async def alert_list(interaction: discord.Interaction):
-    msg = pulse.alert_list(interaction.user.id)
+    msg = await asyncio.to_thread(pulse.alert_list, interaction.user.id)
     await interaction.response.send_message(msg)
 
 @alert.command(name="remove", description="Delete an alert")
 @app_commands.describe(alert_id="The number shown in /alert list")
 async def alert_remove(interaction: discord.Interaction, alert_id: int):
-    msg = pulse.alert_remove(interaction.user.id, alert_id)
+    msg = await asyncio.to_thread(pulse.alert_remove, interaction.user.id, alert_id)
     await interaction.response.send_message(msg)
 
 bot.tree.add_command(alert)
@@ -123,8 +157,8 @@ bot.tree.add_command(alert)
 @tasks.loop(seconds=60)
 async def alert_loop():
     try:
-        fired = pulse.check_alerts()
-    except ValueError as e:
+        fired = await asyncio.to_thread(pulse.check_alerts)
+    except (ConnectionError, ValueError) as e:
         print(f"Alert check failed: {e}")
         return
     for a, msg in fired:

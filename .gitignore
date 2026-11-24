@@ -1,16 +1,28 @@
-# Secrets
+# Secrets and keys
 .env
+.env.*
+!.env.example
+*.pem
+*.key
 
 # Python
 .venv/
+venv/
 __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
 dist/
 build/
 
-#guideline files
-guideline.md
+# Local notes
+guidelines.md
+stockpulse.pem
+
+# OS / editor
+.DS_Store
+Thumbs.db
